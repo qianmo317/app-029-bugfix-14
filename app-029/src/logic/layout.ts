@@ -528,21 +528,31 @@ export function defaultProject(id: string, panel?: Partial<SignPanel>): Project 
   }
 }
 
-/** 把文本转成逐字项（保留已有微调值，多行用 \n 分隔） */
-export function textToItems(text: string, _prev: CharItem[], settings: LayoutSettings, sizeMm: number): CharItem[] {
+/** 把文本转成逐字项（按字序与字符从旧项读回微调值，多行用 \n 分隔） */
+export function textToItems(text: string, prev: CharItem[], settings: LayoutSettings, sizeMm: number): CharItem[] {
+  // 旧项按「字符 → 同字符的出现顺序」排队，新文本逐字按序取回旧微调值
+  const pool = new Map<string, CharItem[]>()
+  for (const it of prev) {
+    const q = pool.get(it.char)
+    if (q) q.push(it)
+    else pool.set(it.char, [it])
+  }
+  const defTrack = round1(settings.trackRatio * sizeMm)
   const lines = text.split('\n')
   const out: CharItem[] = []
   let seq = 0
   lines.forEach((lineText, li) => {
     for (const ch of lineText) {
       if (ch === '\r') continue
+      const old = pool.get(ch)?.shift()
       out.push({
         char: ch,
-        trackMm: round1(settings.trackRatio * sizeMm),
-        offsetYMm: 0,
-        mode: 'solid',
+        // 手动调过的字距按旧值读回；未调过的跟随当前默认字距
+        trackMm: old?.trackTouched ? old.trackMm : defTrack,
+        offsetYMm: old ? old.offsetYMm : 0,
+        mode: old ? old.mode : 'solid',
         line: li,
-        trackTouched: false,
+        trackTouched: old?.trackTouched ?? false,
         seq
       })
       seq++

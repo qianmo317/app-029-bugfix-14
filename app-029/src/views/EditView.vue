@@ -76,24 +76,57 @@ function isTypingTarget(t: EventTarget | null): boolean {
 }
 
 function onKey(e: KeyboardEvent): void {
-  if (isTypingTarget(e.target)) return
   const p = project.value
   if (!p || active.value === null) return
   const it = p.layout.items[active.value]
   if (!it) return
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-    it.offsetYMm = round1(it.offsetYMm + (e.key === 'ArrowUp' ? -1 : 1))
+  const key = e.key
+  if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') return
+  // 焦点还在输入框里时先让开输入框，再处理按键
+  const t = e.target as HTMLElement | null
+  if (isTypingTarget(t)) t?.blur()
+  e.preventDefault() // 挡住页面滚动
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    const step = e.shiftKey ? 5 : 1
+    it.trackMm = round1(it.trackMm + (key === 'ArrowLeft' ? -step : step))
+    it.trackTouched = true
+  } else {
+    it.offsetYMm = round1(it.offsetYMm + (key === 'ArrowUp' ? -1 : 1))
   }
 }
 
-function resetTrack(_index: number): void {}
+/** 当前默认字距（默认字距比例 × 当前字号） */
+function defaultTrackMm(): number {
+  const p = project.value
+  if (!p) return 0
+  return round1(p.layout.settings.trackRatio * (layout.value?.sizeMm ?? p.layout.settings.baseSizeMm))
+}
+
+function resetTrack(index: number): void {
+  const it = project.value?.layout.items[index]
+  if (!it) return
+  it.trackMm = defaultTrackMm()
+  it.trackTouched = false
+}
 
 function resetAllTracks(): void {
   const p = project.value
   if (!p) return
+  const def = defaultTrackMm()
   for (const it of p.layout.items) {
+    it.trackMm = def
+    it.trackTouched = false
     it.offsetYMm = 0
   }
+}
+
+function bumpTrack(delta: number): void {
+  const p = project.value
+  if (!p || active.value === null) return
+  const it = p.layout.items[active.value]
+  if (!it) return
+  it.trackMm = round1(it.trackMm + delta)
+  it.trackTouched = true
 }
 
 function applySuggested(): void {
@@ -377,18 +410,10 @@ function areaM2(w: number, h: number): string {
                     step="1"
                     @input="project.layout.items[active].trackTouched = true"
                   />
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm - 5)">
-                    −5
-                  </button>
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm - 1)">
-                    −1
-                  </button>
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm + 1)">
-                    +1
-                  </button>
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm + 5)">
-                    +5
-                  </button>
+                  <button @click="bumpTrack(-5)">−5</button>
+                  <button @click="bumpTrack(-1)">−1</button>
+                  <button @click="bumpTrack(1)">+1</button>
+                  <button @click="bumpTrack(5)">+5</button>
                   <span class="muted" v-if="!project.layout.items[active].trackTouched">跟随默认（改动后独立）</span>
                 </div>
               </div>
