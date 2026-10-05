@@ -528,21 +528,33 @@ export function defaultProject(id: string, panel?: Partial<SignPanel>): Project 
   }
 }
 
-/** 把文本转成逐字项（保留已有微调值，多行用 \n 分隔） */
-export function textToItems(text: string, _prev: CharItem[], settings: LayoutSettings, sizeMm: number): CharItem[] {
+/**
+ * 把文本转成逐字项（多行用 \n 分隔）。
+ * 改文字后按「字序 + 字符」把旧微调值读回来：字序位置存在且仍是同一个字时，
+ * 沿用该字原来的字距（含是否已单独调整）、上下偏移与实心/描边设置，
+ * 不能因为多打/删一个字或换一行就把整排微调清空。
+ */
+export function textToItems(text: string, prev: CharItem[], settings: LayoutSettings, sizeMm: number): CharItem[] {
   const lines = text.split('\n')
+  // 旧数据兼容：历史项可能没有 seq，按出现顺序补齐
+  const bySeq = new Map<number, CharItem>()
+  prev.forEach((it, i) => bySeq.set(it.seq ?? i, it))
+  const fallbackDefault = round1(settings.trackRatio * sizeMm)
   const out: CharItem[] = []
   let seq = 0
   lines.forEach((lineText, li) => {
     for (const ch of lineText) {
       if (ch === '\r') continue
+      const old = bySeq.get(seq)
+      const keep = old && old.char === ch
       out.push({
         char: ch,
-        trackMm: round1(settings.trackRatio * sizeMm),
-        offsetYMm: 0,
-        mode: 'solid',
+        // 跟随默认的项重新取当前字号下的默认字距；已单独调整的项保留原值
+        trackMm: keep && old.trackTouched ? old.trackMm : fallbackDefault,
+        trackTouched: keep ? old.trackTouched === true : false,
+        offsetYMm: keep ? old.offsetYMm : 0,
+        mode: keep ? old.mode : 'solid',
         line: li,
-        trackTouched: false,
         seq
       })
       seq++

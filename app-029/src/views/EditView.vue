@@ -75,23 +75,70 @@ function isTypingTarget(t: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
+function defaultTrackMm(): number {
+  const p = project.value
+  if (!p) return 0
+  return round1(p.layout.settings.trackRatio * (layout.value?.sizeMm ?? p.layout.settings.baseSizeMm))
+}
+
 function onKey(e: KeyboardEvent): void {
+  // 焦点在输入框/文本域里时先让给正常输入（移动光标、换行等），不拦截按键
   if (isTypingTarget(e.target)) return
   const p = project.value
   if (!p || active.value === null) return
   const it = p.layout.items[active.value]
   if (!it) return
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-    it.offsetYMm = round1(it.offsetYMm + (e.key === 'ArrowUp' ? -1 : 1))
+  const step = e.shiftKey ? 5 : 1
+  switch (e.key) {
+    case 'ArrowLeft':
+      it.trackMm = round1(it.trackMm - step)
+      it.trackTouched = true
+      break
+    case 'ArrowRight':
+      it.trackMm = round1(it.trackMm + step)
+      it.trackTouched = true
+      break
+    case 'ArrowUp':
+      it.offsetYMm = round1(it.offsetYMm - 1)
+      break
+    case 'ArrowDown':
+      it.offsetYMm = round1(it.offsetYMm + 1)
+      break
+    default:
+      return
   }
+  // 挡住方向键的默认行为，避免按住时整页跟着滚动/焦点移动
+  e.preventDefault()
 }
 
-function resetTrack(_index: number): void {}
+/** 单字复位：只把这个字的字距还原成默认（清除「已单独调过」状态） */
+function resetTrack(index: number): void {
+  const p = project.value
+  if (!p) return
+  const it = p.layout.items[index]
+  if (!it) return
+  it.trackMm = defaultTrackMm()
+  it.trackTouched = false
+}
 
+/** 面板按钮调字距（±1/±5mm），改动后与默认字距脱钩 */
+function nudgeTrack(delta: number): void {
+  const p = project.value
+  if (!p || active.value === null) return
+  const it = p.layout.items[active.value]
+  if (!it) return
+  it.trackMm = round1(it.trackMm + delta)
+  it.trackTouched = true
+}
+
+/** 整排复位：每个字的字距与上下偏移一起还原 */
 function resetAllTracks(): void {
   const p = project.value
   if (!p) return
+  const dft = defaultTrackMm()
   for (const it of p.layout.items) {
+    it.trackMm = dft
+    it.trackTouched = false
     it.offsetYMm = 0
   }
 }
@@ -356,6 +403,7 @@ function areaM2(w: number, h: number): string {
                   字距 {{ layout.chars[i]?.gapAfter ?? '—' }}mm<br />
                   偏移 {{ it.offsetYMm }}mm · {{ it.mode === 'solid' ? '实心' : '描边' }}
                 </div>
+                <span class="tag warn" v-if="it.trackTouched" style="margin-top: 2px">字距已单独调</span>
                 <div class="row" style="margin-top: 4px; gap: 4px">
                   <button style="padding: 1px 6px" @click.stop="resetTrack(i)">复位</button>
                   <button
@@ -377,18 +425,10 @@ function areaM2(w: number, h: number): string {
                     step="1"
                     @input="project.layout.items[active].trackTouched = true"
                   />
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm - 5)">
-                    −5
-                  </button>
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm - 1)">
-                    −1
-                  </button>
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm + 1)">
-                    +1
-                  </button>
-                  <button @click="project.layout.items[active].trackMm = round1(project.layout.items[active].trackMm + 5)">
-                    +5
-                  </button>
+                  <button @click="nudgeTrack(-5)">−5</button>
+                  <button @click="nudgeTrack(-1)">−1</button>
+                  <button @click="nudgeTrack(1)">+1</button>
+                  <button @click="nudgeTrack(5)">+5</button>
                   <span class="muted" v-if="!project.layout.items[active].trackTouched">跟随默认（改动后独立）</span>
                 </div>
               </div>
